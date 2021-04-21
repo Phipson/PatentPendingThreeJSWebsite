@@ -41,6 +41,370 @@
 			<source src="./Textures/SciFi.mp4" type='video/mp4'>
 		</video>
 
-		<script type="module" src="main.js"></script>
+		<script type="module">
+            // Find the latest version by visiting https://unpkg.com/three.          
+            import * as THREE from 'https://unpkg.com/three@0.127.0/build/three.module.js';
+            import { GUI } from 'https://unpkg.com/three@0.127.0/examples/jsm/libs/dat.gui.module.js';
+            import { GLTFLoader } from 'https://unpkg.com/three@0.127.0/examples/jsm/loaders/GLTFLoader.js';
+            import { EffectComposer } from 'https://unpkg.com/three@0.127.0/examples/jsm/postprocessing/EffectComposer.js';
+            import { RenderPass } from 'https://unpkg.com/three@0.127.0/examples/jsm/postprocessing/RenderPass.js';
+            import { UnrealBloomPass } from 'https://unpkg.com/three@0.127.0/examples/jsm/postprocessing/UnrealBloomPass.js';
+            import Stats from 'https://unpkg.com/three@0.127.0/examples/jsm/libs/stats.module';
+
+            const loader = new GLTFLoader();
+
+            const scene = new THREE.Scene();
+            loader.load('./Models/WebsiteScene.glb', function(gltf) {
+                console.log(gltf.scene);
+                scene.add(gltf.scene);
+                configGLTBScene();
+                init();
+                animate();
+            })
+
+            let stats = new Stats();
+
+            const fov = 80;
+            const aspect = 1.8;  // the canvas default
+            const near = 0.1;
+            const far = 1000;
+            const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
+            let cameraPosition = new THREE.Vector3(0, 2, 10);
+            let cameraLookAtPosition = new THREE.Vector3(0, 0, 0); // TODO: Lerp between objects via tweening
+            let lookAtObject = new THREE.Object3D();
+
+            camera.position.set(cameraPosition.x, cameraPosition.y, cameraPosition.z);
+            var renderer = new THREE.WebGLRenderer({
+                antialias: true,
+                alpha: true
+            });
+
+            var canvas = renderer.domElement;
+            document.body.appendChild(canvas);
+
+            var plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -10);
+            var raycaster = new THREE.Raycaster();
+            var mouse = new THREE.Vector2();
+            var look = new THREE.Vector2();
+            var pointOfIntersection = new THREE.Vector3();
+
+            canvas.addEventListener("mousemove", onMouseMove, false);
+
+            const PPParams = {
+                exposure: 1,
+                bloomStrength:  0.7,
+                bloomThreshold: 0,
+                bloomRadius: 0
+            };
+
+            function onMouseMove(event){
+                mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+                mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+            }
+
+            let texturePaths = ['Textures/About/Phipson.jpg', "Textures/About/Lee_Aaron.jpg", "Textures/About/Mohan_Divya.JPG", "Textures/About/Chen_Maggie.JPG", "Textures/About/Suazo_Gabriela.jpg"]
+            function configGLTBScene() {
+                // Add all the about me panel pages
+                for (let i = 0; i < 5; i++) {
+                    let texture = new THREE.TextureLoader().load(texturePaths[i]);
+                    texture.wrapS = THREE.RepeatWrapping;
+                    texture.wrapT = THREE.RepeatWrapping;
+                    texture.repeat.set(0.6, -1);
+                    texture.offset.set(0.18, 0);
+                    scene.getObjectByName(`Panel_${i+1}`, true).material = new THREE.MeshLambertMaterial( { map:  texture } );
+                }
+
+                // Add TV Video Texture
+                video = document.getElementById( 'mainTV' );
+                video.play();
+
+                texture = new THREE.VideoTexture( video );
+                texture.minFilter = THREE.NearestFilter;
+
+                const parameters = { map: texture, emissiveIntensity: 3.0 };
+                scene.getObjectByName("FutureTV", true).material = new THREE.MeshBasicMaterial( { map:  texture } );
+                scene.getObjectByName("SonyTVScreen", true).material = new THREE.MeshBasicMaterial( { map:  texture } );
+
+                // Add card textures
+                for (let i = 0; i < 7; i++) {
+                    let texture = new THREE.TextureLoader().load(`Textures/Cards/Card_${i+1}.png`);
+                    texture.wrapS = THREE.RepeatWrapping;
+                    texture.wrapT = THREE.RepeatWrapping;
+                    texture.repeat.set(-1, 1);
+                    scene.getObjectByName(`Card_${i+1}`, true).material = new THREE.MeshLambertMaterial( { map:  texture, emissiveIntensity: 0.1 } );
+                }
+
+                // Set couch material color
+                for (let i = 0; i < 12; i++) {
+                    scene.getObjectByName(`Couch_${i+1}`, true).material.color.setHex(0x6A2E35);
+                }
+
+                // Set coffee table material color
+                scene.getObjectByName('CoffeeTableSurface', true).material = new THREE.MeshLambertMaterial({color: 0xDDA77B});
+                scene.getObjectByName('CoffeeTableLegs', true).material = new THREE.MeshLambertMaterial({color: 0x283845});
+                scene.getObjectByName('CoffeeTableSupports', true).material = new THREE.MeshLambertMaterial({color: 0x283845});
+
+                // Projector
+                scene.getObjectByName('Plane002', true).material = new THREE.MeshLambertMaterial({color: 0xDAD6D6});
+
+                // TV Stand Cabinets
+                let cabinetMat = new THREE.MeshLambertMaterial({color: 0xB6C2D9});
+                let surfaceMat = new THREE.MeshLambertMaterial({color: 0x171D1C})
+                scene.getObjectByName('236obj05', true).material = surfaceMat;
+                scene.getObjectByName('236obj04', true).material = cabinetMat;
+                scene.getObjectByName('236obj02', true).material = cabinetMat;
+                scene.getObjectByName('Mesh457', true).material = cabinetMat;
+            }
+
+            let video, texture, material, mesh, box, composer, effectFXAA;
+            function init() {
+                lookAtObject.position.x = 0; lookAtObject.position.y = 0; lookAtObject.position.z = 0; 
+                scene.add(lookAtObject)
+
+                const color = 0x1C2445;
+                const density = 0.1;
+                scene.fog = new THREE.FogExp2(color, density);
+
+                // POST PROCESSING
+                const renderScene = new RenderPass( scene, camera );
+                const bloomPass = new UnrealBloomPass( new THREE.Vector2( window.innerWidth, window.innerHeight ), 1.5, 0.4, .85 );
+                bloomPass.threshold = PPParams.bloomThreshold;
+                bloomPass.strength = PPParams.bloomStrength;
+                bloomPass.radius = PPParams.bloomRadius;
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setClearColor( 0x1C2445, 1 );
+
+                composer = new EffectComposer( renderer );
+                composer.addPass( renderScene );
+                composer.addPass( bloomPass );
+
+                const gui = new GUI();
+
+                gui.add( PPParams, 'exposure', 0.1, 2 ).onChange( function ( value ) {
+
+                    renderer.toneMappingExposure = Math.pow( value, 4.0 );
+
+                } );
+
+                gui.add( PPParams, 'bloomThreshold', 0.0, 1.0 ).onChange( function ( value ) {
+
+                    bloomPass.threshold = Number( value );
+
+                } );
+
+                gui.add( PPParams, 'bloomStrength', 0.0, 3.0 ).onChange( function ( value ) {
+
+                    bloomPass.strength = Number( value );
+
+                } );
+
+                gui.add( PPParams, 'bloomRadius', 0.0, 1.0 ).step( 0.01 ).onChange( function ( value ) {
+
+                    bloomPass.radius = Number( value );
+
+                } );
+
+                document.body.appendChild(stats.dom);
+                document.body.addEventListener('keydown', keyPressed);
+                document.body.addEventListener('resize', onWindowResize)
+
+                setupTween();
+                gui.open();
+            }
+
+            var easeAmount = 8;
+            var sensitivity = 0.0005;
+            function update() {
+                if (spotLightHelper) spotLightHelper.update();
+                lookAtObject.position.x = cameraLookAtPosition.x;
+                lookAtObject.position.y = cameraLookAtPosition.y;
+                lookAtObject.position.z = cameraLookAtPosition.z;
+
+                look.x += (mouse.x-look.x)/easeAmount;
+                look.y += (mouse.y-look.y)/easeAmount;
+                
+                camera.position.x = cameraPosition.x + look.x * window.innerWidth * sensitivity;
+                camera.position.y = cameraPosition.y + look.y * window.innerHeight * sensitivity;
+                camera.position.z = cameraPosition.z;
+
+                camera.lookAt(lookAtObject.position);
+                stats.update();
+                TWEEN.update();
+            }
+
+            function animate() 
+            {
+                requestAnimationFrame( animate );
+                composer.render();
+                // render();		
+                update();
+            }
+
+            function render() 
+            {	
+                if ( video.readyState === video.HAVE_ENOUGH_DATA ) 
+                {
+                    if ( texture ) 
+                        texture.needsUpdate = true;
+                }
+
+                if (resize(renderer)) {
+                    camera.aspect = canvas.clientWidth / canvas.clientHeight;
+                    camera.updateProjectionMatrix();
+                }
+
+                renderer.render( scene, camera );
+            }
+
+            function resize(renderer) {
+                const canvas = renderer.domElement;
+                const width = canvas.clientWidth;
+                const height = canvas.clientHeight;
+                const needResize = canvas.width !== width || canvas.height !== height;
+                if (needResize) {
+                    renderer.setSize(width, height, false);
+                }
+                return needResize;
+            }
+
+            function onWindowResize() {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize( window.innerWidth, window.innerHeight );
+            }
+
+            function keyPressed(e) {
+                switch(e.key) {
+                    case 'ArrowLeft':
+                        cameraTweenIndex = cameraTweenIndex - 1 < 0 ? cameraSpotlightConfig.length - 1 : cameraTweenIndex - 1;
+                        updateCameraTransform();
+                        updateSpotlight();
+                        break;
+                    case 'ArrowRight':
+                        cameraTweenIndex = cameraTweenIndex + 1 >= cameraSpotlightConfig.length ? 0 : cameraTweenIndex + 1;
+                        updateCameraTransform();
+                        updateSpotlight();
+                        break;
+                }
+                e.preventDefault();
+            }
+
+            let cameraSpotlightConfig = [
+                {
+                    focusObj: "FutureTV",
+                    positionName: "Position_Main",
+                    lookAt: null,
+                    cameraPos: null,
+                    lightColor: 0xFFC0BE
+                },
+                {
+                    focusObj: "CoffeeTableSurface",
+                    positionName: "Position_Research",
+                    lookAt: null,
+                    cameraPos: null,
+                    lightColor: 0xFFC0BE
+                },
+                {
+                    focusObj: "Projector",
+                    positionName: "Position_Research_Pretotype",
+                    lookAt: null,
+                    cameraPos: null,
+                    lightColor: 0xFFC0BE
+                },
+                {
+                    focusObj: "SonyTV",
+                    positionName: "Position_Research_Current",
+                    lookAt: null,
+                    cameraPos: null,
+                    lightColor: 0xFFC0BE
+                },
+                {
+                    focusObj: "Card_7",
+                    positionName: "Position_Research_Future",
+                    lookAt: null,
+                    cameraPos: null,
+                    lightColor: 0xFFC0BE
+                },
+                {
+                    focusObj: "Panel_3",
+                    positionName: "Position_About",
+                    lookAt: null,
+                    cameraPos: null,
+                    lightColor: 0xFFC0BE
+                },
+            ]
+
+            let default_color = 0xFF82A9;
+            let cameraTweenIndex = 0;
+            let spotlight, spotLightHelper;
+            function setupTween() {
+                TWEEN.removeAll();
+
+                spotlight = createSpotlight(default_color);
+                scene.add(spotlight);
+
+                // spotLightHelper = new THREE.SpotLightHelper( spotlight );
+                // scene.add( spotLightHelper );
+
+                cameraSpotlightConfig.forEach((config, i) => {
+                    // console.log(config);
+                    let obj = scene.getObjectByName(config.focusObj, true);
+                    const camPos = scene.getObjectByName(config.positionName, true).position;
+                    config.lookAt = new THREE.Vector3(obj.position.x, obj.position.y, obj.position.z);
+                    config.cameraPos = new THREE.Vector3(camPos.x, camPos.y, camPos.z);
+                })
+
+                updateSpotlight();
+                updateCameraTransform();
+            }
+
+            function updateCameraTransform() {
+                const temp = cameraSpotlightConfig[cameraTweenIndex];
+
+                let tempPos = cameraPosition;
+                let newCamPos = temp.cameraPos;
+                let tempLookAt = lookAtObject.position;
+                let newLookAt = temp.lookAt;
+
+                // console.log(newCamPos);
+
+                new TWEEN.Tween(tempPos)
+                .to(newCamPos, 2000)
+                .easing (TWEEN.Easing.Cubic.InOut)
+                .onUpdate(function() { cameraPosition = tempPos; })
+                .start();
+
+                new TWEEN.Tween(tempLookAt)
+                .to(newLookAt, 2000)
+                .easing (TWEEN.Easing.Cubic.InOut)
+                .onUpdate(function() { cameraLookAtPosition = tempLookAt; })
+                .start();
+            }
+
+            function createSpotlight(color) {
+                const newObj = new THREE.SpotLight(color, 2);
+
+                newObj.castShadow = true;
+                newObj.angle = 0.5;
+                newObj.penumbra = 0.5;
+                newObj.decay = 2;
+                newObj.distance = 20;
+                newObj.target = lookAtObject;
+
+                return newObj;
+            }
+
+            function updateSpotlight() {
+                const temp = cameraSpotlightConfig[cameraTweenIndex];
+                let tempPosition = spotlight.target.position;
+
+                new TWEEN.Tween(spotlight.position)
+                .to({x: temp.cameraPos.x, y: 10, z: temp.cameraPos.z}, 1000)
+                .easing(TWEEN.Easing.Cubic.InOut)
+                .start();
+
+                spotlight.color.setHex(temp.lightColor);
+            }
+        </script>
 	</body>
 </html>

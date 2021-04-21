@@ -242,8 +242,8 @@ function keyPressed(e) {
     e.preventDefault();
 }
 
-let objectFocusNames = ["TV", "Plane010", "Panel_3"]
-let cameraPositionNames = ["Position_Main", "Position_CurrentResearch", "Position_About"]
+let objectFocusNames = ["FutureTV", "CoffeeTableSurface", "Panel_3"]
+let cameraPositionNames = ["Position_Main", "Position_Research", "Position_About"]
 let lookAtPositions = []
 let cameraPositions = []
 let cameraTweenIndex = 0;
